@@ -131,7 +131,7 @@ class FindLanes(Processor):
         self.nwindows = nwindows
 
     def process(self, img):
-        histogram = np.sum(img[img.shape[0] / 2:, :], axis=0)
+        histogram = np.sum(img[img.shape[0] // 2:, :], axis=0)
         self.out_img = np.dstack((img, img, img)) * 255
 
         midpoint = np.int(histogram.shape[0] / 2)
@@ -150,10 +150,10 @@ class FindLanes(Processor):
         margin = 100
         minpix = 50
 
-        self.left_lane_inds = []
-        self.right_lane_inds = []
+        left_lane_inds = []
+        right_lane_inds = []
 
-        for window in range(nwindows):
+        for window in range(self.nwindows):
             win_y_low = img.shape[0] - (window + 1) * window_height
             win_y_high = img.shape[0] - window * window_height
             win_xleft_low = leftx_current - margin
@@ -169,21 +169,21 @@ class FindLanes(Processor):
             good_right_inds = ((self.nonzeroy >= win_y_low) & (self.nonzeroy < win_y_high) &
                                (self.nonzerox >= win_xright_low) & (self.nonzerox < win_xright_high)).nonzero()[0]
 
-            self.left_lane_inds.append(good_left_inds)
-            self.right_lane_inds.append(good_right_inds)
+            left_lane_inds.append(good_left_inds)
+            right_lane_inds.append(good_right_inds)
 
             if len(good_left_inds) > minpix:
                 leftx_current = np.int(np.mean(self.nonzerox[good_left_inds]))
             if len(good_right_inds) > minpix:
                 rightx_current = np.int(np.mean(self.nonzerox[good_right_inds]))
 
-        left_lane_inds = np.concatenate(self.left_lane_inds)
-        right_lane_inds = np.concatenate(self.right_lane_inds)
+        self.left_lane_inds = np.concatenate(left_lane_inds)
+        self.right_lane_inds = np.concatenate(right_lane_inds)
 
-        leftx = self.nonzerox[left_lane_inds]
-        lefty = self.nonzeroy[left_lane_inds]
-        rightx = self.nonzerox[right_lane_inds]
-        righty = self.nonzeroy[right_lane_inds]
+        leftx = self.nonzerox[self.left_lane_inds]
+        lefty = self.nonzeroy[self.left_lane_inds]
+        rightx = self.nonzerox[self.right_lane_inds]
+        righty = self.nonzeroy[self.right_lane_inds]
 
         self.left_fit = np.polyfit(lefty, leftx, 2)
         self.right_fit = np.polyfit(righty, rightx, 2)
@@ -197,7 +197,74 @@ class FindLanes(Processor):
 
         self.out_img[self.nonzeroy[self.left_lane_inds], self.nonzerox[self.left_lane_inds]] = [255, 0, 0]
         self.out_img[self.nonzeroy[self.right_lane_inds], self.nonzerox[self.right_lane_inds]] = [0, 0, 255]
+
+        plt.figure(figsize=(20, 6))
         plt.imshow(self.out_img)
+        plt.plot(left_fitx, ploty, color='yellow')
+        plt.plot(right_fitx, ploty, color='yellow')
+        plt.xlim(0, 1280)
+        plt.ylim(720, 0)
+
+
+class FastFindLanes:
+
+    def __init__(self):
+        Processor.__init__(self)
+
+    def process(self, img):
+        nonzero = img.nonzero()
+        self.nonzeroy = np.array(nonzero[0])
+        self.nonzerox = np.array(nonzero[1])
+
+        margin = 100
+        left_lane_inds = \
+                        ((self.nonzerox > (self.left_fit[0] * (self.nonzeroy ** 2) +
+                                            self.left_fit[1] * self.nonzeroy +
+                                            self.left_fit[2] - margin)) &
+                        (self.nonzerox < (self.left_fit[0] * (self.nonzeroy ** 2) +
+                                          self.left_fit[1] * self.nonzeroy +
+                                          self.left_fit[2] + margin)))
+
+        right_lane_inds = \
+                        ((self.nonzerox > (self.right_fit[0] * (self.nonzeroy ** 2) +
+                                           self.right_fit[1] * self.nonzeroy +
+                                           self.right_fit[2] - margin)) &
+                        (self.nonzerox < (self.right_fit[0] * (self.nonzeroy ** 2) +
+                                          self.right_fit[1] * self.nonzeroy +
+                                          self.right_fit[2] + margin)))
+
+        leftx = self.nonzerox[left_lane_inds]
+        lefty = self.nonzeroy[left_lane_inds]
+        rightx = self.nonzerox[right_lane_inds]
+        righty = self.nonzeroy[right_lane_inds]
+
+        left_fit = np.polyfit(lefty, leftx, 2)
+        right_fit = np.polyfit(righty, rightx, 2)
+
+        ploty = np.linspace(0, img.shape[0] - 1, img.shape[0])
+        left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
+        right_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
+
+    def show(self, img):
+        self.process(img)
+
+        out_img = np.dstack((img, img, img)) * 255
+        window_img = np.zeros_like(out_img)
+
+        out_img[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
+        out_img[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 0, 255]
+
+        left_line_window1 = np.array([np.transpose(np.vstack([left_fitx - margin, ploty]))])
+        left_line_window2 = np.array([np.flipud(np.transpose(np.vstack([left_fitx + margin, ploty])))])
+        left_line_pts = np.hstack((left_line_window1, left_line_window2))
+        right_line_window1 = np.array([np.transpose(np.vstack([right_fitx - margin, ploty]))])
+        right_line_window2 = np.array([np.flipud(np.transpose(np.vstack([right_fitx + margin, ploty])))])
+        right_line_pts = np.hstack((right_line_window1, right_line_window2))
+
+        cv2.fillPoly(window_img, np.int_([left_line_pts]), (0, 255, 0))
+        cv2.fillPoly(window_img, np.int_([right_line_pts]), (0, 255, 0))
+        result = cv2.addWeighted(out_img, 1, window_img, 0.3, 0)
+        plt.imshow(result)
         plt.plot(left_fitx, ploty, color='yellow')
         plt.plot(right_fitx, ploty, color='yellow')
         plt.xlim(0, 1280)
