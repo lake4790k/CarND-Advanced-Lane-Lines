@@ -1,3 +1,5 @@
+from cv2.fisheye import calibrate
+from moviepy.editor import VideoFileClip
 import numpy as np
 import cv2
 import glob
@@ -23,11 +25,15 @@ class Data:
         self.ploty = np.array([])
         self.left_fitx = np.array([])
         self.right_fitx = np.array([])
+        self.left_smooth_fitx = None
+        self.right_smooth_fitx = None
         self.left_fit = np.array([])
         self.right_fit = np.array([])
 
         self.left_curverad = None
         self.right_curverad = None
+        self.curverad = None
+        self.lane_offset = 0
 
 
 class Processor:
@@ -131,8 +137,8 @@ class BinaryThreshold(Processor):
 class PerspectiveTransform(Processor):
     def __init__(self, data: Data):
         Processor.__init__(self, data)
-        self.src = np.float32([[550, 450], [750, 450], [1200, 700], [150, 700]])
-        self.dst = np.float32([[0, 0], [1280, 0], [1280, 720], [0, 720]])
+        self.src = np.float32([[600, 450], [700, 450], [1100, 700], [200, 700]])
+        self.dst = np.float32([[300, 0], [1000, 0], [1000, 720], [300, 720]])
         self.data.M = cv2.getPerspectiveTransform(self.src, self.dst)
         self.data.Minv = cv2.getPerspectiveTransform(self.dst, self.src)
 
@@ -321,6 +327,27 @@ class NextFindLanes(Processor):
         plt.ylim(720, 0)
 
 
+class ExponentialSmoothing(Processor):
+    def __init__(self, data: Data, decay=0.9):
+        Processor.__init__(self, data)
+        self.decay = decay
+
+    def process(self, img: np.array):
+        if self.data.left_smooth_fitx is None:
+            self.data.left_smooth_fitx = self.data.left_fitx
+            self.data.right_smooth_fitx = self.data.right_fitx
+        else:
+            left = self.data.left_fitx[-1]
+            right = self.data.right_fitx[-1]
+
+            if 200 < left < 400:
+                self.data.left_smooth_fitx = self.decay * self.data.left_smooth_fitx +\
+                                             (1 - self.decay) * self.data.left_fitx
+            if 900 < right < 1100:
+                self.data.right_smooth_fitx = self.decay * self.data.right_smooth_fitx + \
+                                              (1 - self.decay) * self.data.right_fitx
+
+
 class Curvature(Processor):
     def __init__(self, data: Data):
         Processor.__init__(self, data)
@@ -330,19 +357,110 @@ class Curvature(Processor):
     def process(self, img: np.array) -> np.array:
         ploty = self.data.ploty
         y_eval = np.max(ploty)
-        left_fit_cr = np.polyfit(ploty * self.ym_per_pix, self.data.left_fitx * self.xm_per_pix, 2)
-        right_fit_cr = np.polyfit(ploty * self.ym_per_pix, self.data.right_fitx * self.xm_per_pix, 2)
+        left_fit_cr = np.polyfit(ploty * self.ym_per_pix, self.data.left_smooth_fitx * self.xm_per_pix, 2)
+        right_fit_cr = np.polyfit(ploty * self.ym_per_pix, self.data.right_smooth_fitx * self.xm_per_pix, 2)
 
         self.data.left_curverad = ((1 + (2 * left_fit_cr[0] * y_eval * self.ym_per_pix + left_fit_cr[1]) ** 2) ** 1.5) / \
                                     np.absolute(2 * left_fit_cr[0])
         self.data.right_curverad = ((1 + (2 * right_fit_cr[0] * y_eval * self.ym_per_pix + right_fit_cr[1]) ** 2) ** 1.5) / \
                                     np.absolute(2 * right_fit_cr[0])
+
+        self.data.curverad = (self.data.left_curverad + self.data.right_curverad) / 2
         return img
 
     def show(self, img: np.array):
         self.process(img)
-        print(self.data.left_curverad, 'm', self.data.right_curverad, 'm')
 
+
+class LaneOffset(Processor):
+
+    def __init__(self, data: Data):
+        Processor.__init__(self, data)
+        self.xm_per_pix = 3.7 / 700
+
+    def process(self, img: np.array):
+        lane_center = self.data.right_smooth_fitx[-1] - self.data.left_smooth_fitx[-1]
+        img_center = self.data.rawImg.shape[1] / 2
+        offset = img_center - lane_center
+        self.data.lane_offset = offset * self.xm_per_pix
+
+    def show(self, img: np.array):
+        self.process(img)
+
+
+class DecorateWithData(Processor):
+
+    def __init__(self, data: Data):
+        Processor.__init__(self, data)
+
+    def process(self, img: np.array):
+        warp_zero = np.zeros_like(self.data.warpedImg).astype(np.uint8)
+        color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
+
+        pts_left = np.array([np.transpose(np.vstack([self.data.left_smooth_fitx, self.data.ploty]))])
+        pts_right = np.array([np.flipud(np.transpose(np.vstack([self.data.right_smooth_fitx, self.data.ploty])))])
+        pts = np.hstack((pts_left, pts_right))
+
+        cv2.fillPoly(color_warp, np.int_([pts]), (0, 255, 0))
+
+        newwarp = cv2.warpPerspective(color_warp, self.data.Minv, (img.shape[1], img.shape[0]))
+        img = cv2.addWeighted(self.data.undistImg, 1, newwarp, 0.3, 0)
+
+        capped_curve = self.data.curverad
+        if capped_curve > 10000:
+            capped_curve = 10000
+
+        cv2.putText(img, "radius: {:.2f} m".format(capped_curve),
+                    (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 2, (255,255,255), 3)
+        cv2.putText(img, "offset: {:.2f} m".format(self.data.lane_offset),
+                    (10, 100), cv2.FONT_HERSHEY_SIMPLEX, 2, (255,255,255), 3)
+
+        cv2.putText(img, "{:.5f} {:.3f} {:.3f}".format(self.data.left_fit[0],self.data.left_fit[1],self.data.left_fit[2]),
+                    (10, 130), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 1)
+        cv2.putText(img, "{:.5f} {:.3f} {:.3f}".format(self.data.right_fit[0],self.data.right_fit[1],self.data.right_fit[2]),
+                    (10, 160), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 1)
+
+        cv2.putText(img, "{:.1f} : {:.1f}".format(self.data.left_smooth_fitx[-1], self.data.right_smooth_fitx[-1]),
+                    (10, 190), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 1)
+
+        return img
+
+    def show(self, img):
+        img = self.process(img)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        plt.figure(figsize=(20, 8))
+        plt.imshow(img)
 
 if __name__ == '__main__':
     logging.info("STARTING")
+
+    data = Data()
+    cal = Calibration(data)
+    thr = BinaryThreshold(data)
+    per = PerspectiveTransform(data)
+    nextLanes = NextFindLanes(data)
+    lanes = FindLanes(data)
+    smooth = ExponentialSmoothing(data, decay=.5)
+    curve = Curvature(data)
+    off = LaneOffset(data)
+    decorate = DecorateWithData(data)
+
+    def processor(img):
+        data.rawImg = img
+        data.undistImg = cal.process(data.rawImg)
+        data.binaryImg = thr.process(data.undistImg)
+        data.warpedImg = per.process(data.binaryImg)
+
+        if data.curverad is None:
+            lanes.process(data.warpedImg)
+
+        nextLanes.process(data.warpedImg)
+        smooth.process(data.warpedImg)
+        curve.process(data.warpedImg)
+        off.process(data.warpedImg)
+        return decorate.process(data.undistImg)
+
+
+    clip = VideoFileClip("project_video.mp4")
+    processed = clip.fl_image(processor)
+    processed.write_videofile('processed_video.mp4', audio=False)
