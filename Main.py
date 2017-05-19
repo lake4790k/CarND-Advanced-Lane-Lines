@@ -138,7 +138,7 @@ class PerspectiveTransform(Processor):
     def __init__(self, data: Data):
         Processor.__init__(self, data)
         self.src = np.float32([[600, 450], [700, 450], [1100, 700], [200, 700]])
-        self.dst = np.float32([[300, 0], [1000, 0], [1000, 720], [300, 720]])
+        self.dst = np.float32([[300, 0], [980, 0], [980, 720], [300, 720]])
         self.data.M = cv2.getPerspectiveTransform(self.src, self.dst)
         self.data.Minv = cv2.getPerspectiveTransform(self.dst, self.src)
 
@@ -352,7 +352,7 @@ class Curvature(Processor):
     def __init__(self, data: Data):
         Processor.__init__(self, data)
         self.ym_per_pix = 30 / 720
-        self.xm_per_pix = 3.7 / 700
+        self.xm_per_pix = 3.7 / 680
 
     def process(self, img: np.array) -> np.array:
         ploty = self.data.ploty
@@ -376,10 +376,10 @@ class LaneOffset(Processor):
 
     def __init__(self, data: Data):
         Processor.__init__(self, data)
-        self.xm_per_pix = 3.7 / 700
+        self.xm_per_pix = 3.7 / 680
 
     def process(self, img: np.array):
-        lane_center = self.data.right_smooth_fitx[-1] - self.data.left_smooth_fitx[-1]
+        lane_center = (self.data.right_smooth_fitx[-1] + self.data.left_smooth_fitx[-1]) / 2
         img_center = self.data.rawImg.shape[1] / 2
         offset = img_center - lane_center
         self.data.lane_offset = offset * self.xm_per_pix
@@ -415,12 +415,12 @@ class DecorateWithData(Processor):
         cv2.putText(img, "offset: {:.2f} m".format(self.data.lane_offset),
                     (10, 100), cv2.FONT_HERSHEY_SIMPLEX, 2, (255,255,255), 3)
 
-        cv2.putText(img, "{:.5f} {:.3f} {:.3f}".format(self.data.left_fit[0],self.data.left_fit[1],self.data.left_fit[2]),
+        cv2.putText(img, "{:.5f}, {:.3f}, {:.3f}".format(self.data.left_fit[0],self.data.left_fit[1],self.data.left_fit[2]),
                     (10, 130), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 1)
-        cv2.putText(img, "{:.5f} {:.3f} {:.3f}".format(self.data.right_fit[0],self.data.right_fit[1],self.data.right_fit[2]),
+        cv2.putText(img, "{:.5f}, {:.3f}, {:.3f}".format(self.data.right_fit[0],self.data.right_fit[1],self.data.right_fit[2]),
                     (10, 160), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 1)
 
-        cv2.putText(img, "{:.1f} : {:.1f}".format(self.data.left_smooth_fitx[-1], self.data.right_smooth_fitx[-1]),
+        cv2.putText(img, "{:.0f} : {:.0f}".format(self.data.left_smooth_fitx[-1], self.data.right_smooth_fitx[-1]),
                     (10, 190), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 1)
 
         return img
