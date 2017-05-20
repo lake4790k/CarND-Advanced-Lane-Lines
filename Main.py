@@ -55,11 +55,13 @@ class Processor:
         if len(img.shape) < 3:
             ax1.imshow(img, cmap='gray')
         else:
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             ax1.imshow(img)
         ax2.set_title('processed')
         if len(img_.shape) < 3:
             ax2.imshow(img_, cmap='gray')
         else:
+            img_ = cv2.cvtColor(img_, cv2.COLOR_BGR2RGB)
             ax2.imshow(img_)
 
 
@@ -148,8 +150,6 @@ class PerspectiveTransform(Processor):
     def show(self, img: np.array) -> np.array:
         img_ = self.process(img)
         if len(img.shape) > 2:
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            img_ = cv2.cvtColor(img_, cv2.COLOR_BGR2RGB)
             cv2.polylines(img, np.int32([self.src]), True, [255, 255, 255], 5)
 
         self.show2(img, img_)
