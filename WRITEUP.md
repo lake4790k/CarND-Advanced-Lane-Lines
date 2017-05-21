@@ -144,6 +144,6 @@ For the challange videos, this pipeline did not work well, for those I would try
 * the road area that is warped should be retuned as up and down driving changes the correct area
 * the parameters for good curve fits are in a certain range, fits could be rejected based on these 
 * I would implement the fallback to window method from the margin lane finding if the fitted curve has unexpected parameters
-* I would try finetuning the binary thresholding given the challange videos visibility conditions
+* I would try finetuning the binary thresholding given the challange videos visibility conditions: different threshold parameters, color spaces, sobel methods, mixing methods, etc
  
-For now I need to complete the final project in the term, but will return to will try these as well.
+For now I need to complete the next and final project in the term, but will return to will try these as well.
