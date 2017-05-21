@@ -117,12 +117,18 @@ I built the processing pipeline chaining all the methods discussed in the class 
  
  With regards to the windowed vs margined lane finding on the first frame I used the window method, but after only the margin method.
  
-It seemed certain frames were too difficult for the processing I had, but only a few frames, so I added exponentially weighted averging of the fitted line points by adding the `ExponentialSmoothing` (```Main.py```) class in my pipeline after the line finding and before the curvature calculation. With this method the data from the new frames will be merged with the old data gradually, a single new bad frame will not overwrite the previous good fits.
+It seemed certain frames were too difficult for the processing I had, but only a few frames, so I added exponentially weighted averging of the fitted line points by adding the `ExponentialSmoothing` (```Main.py```) class in my pipeline after the line finding and before the curvature calculation. With this method the data from the new frames will be merged with the old data gradually, a single new bad frame will not overwrite the previous good fits:
   
+```python
+left_smooth_fitx = self.decay * self.data.left_smooth_fitx + (1 - self.decay) * self.data.left_fitx
+```
+
 This simple method already stabilized the lines quite a bit except for the last tree shadow. I overlayed the fit parameters on the video showing the 3 fitted curve parameters and the x coordinates where the base of the lane is found. I tried to find a method by looking at how these numbers compared between good and bad frames.
   
 A good solution for the project video was to filter out those frames where the base of the line was found to be in unprobable location (I accept it between pixels 200 and 400 on the left and 900 and 1100 for the right side). This assumes of course that the car is driving in the lane, not leaving it.
 
+
+The final pipeline is the following:
 
 ```python
     def processor(img):
@@ -146,4 +152,4 @@ For the challange videos, this pipeline did not work well, for those I would try
 * I would implement the fallback to window method from the margin lane finding if the fitted curve has unexpected parameters
 * I would try finetuning the binary thresholding given the challange videos visibility conditions: different threshold parameters, color spaces, sobel methods, mixing methods, etc
  
-For now I need to complete the next and final project in the term, but will return to will try these as well.
+For now I need to complete the next and final project in the term, but will return and try these as well.
