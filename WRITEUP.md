@@ -1,8 +1,5 @@
-## Writeup Template
+# Writeup
 
-### You can use this file as a template for your writeup if you want to submit it as a markdown file, but feel free to use some other method and submit a pdf if you prefer.
-
----
 
 **Advanced Lane Finding Project**
 
@@ -28,18 +25,6 @@ The goals / steps of this project are the following:
 [image5b]: ./output_images/lane2.png "Fit Visual"
 [image6]: ./output_images/final.png "Output"
 [video1]: ./project_video.mp4 "Video"
-
-## [Rubric](https://review.udacity.com/#!/rubrics/571/view) Points
-
-### Here I will consider the rubric points individually and describe how I addressed each point in my implementation.  
-
----
-
-### Writeup / README
-
-#### 1. Provide a Writeup / README that includes all the rubric points and how you addressed each one.  You can submit your writeup as markdown or pdf.  [Here](https://github.com/udacity/CarND-Advanced-Lane-Lines/blob/master/writeup_template.md) is a template writeup for this project you can use as a guide and a starting point.  
-
-You're reading it!
 
 ### Camera Calibration
 
@@ -92,13 +77,17 @@ The warp gives this result:
 
 I adapted the windowed method from the class in the `FindLanes.process()` method in `Main.py` and also the simpler method that searched around the previous lane position in the `NextFindLanes.process()` method in `Main.py`.
 
+The window method starts with finding the base of the line by computing a histogram of the pixel intensities of the columns of the lower part of the image. A window is placed around the base and the non zero pixels get stored. Then it proceeds going up placing the fixed size window at the mean of the nonzero pixels in the previous window and stored the nonzero pixels and so on until the top of the image is reached. A second order curve is then fited on these non zero points which is considered to be the lane line.
+
+The `NextFindLanes` method is based on the previous result of the window method. The region around the previous curce is considered (+/- a margin) and the curve is fitted on the nonzero points in the region.
+
 ![alt text][image5]
 
 ![alt text][image5b]
 
 #### 5. Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.
 
-The `Curvature.process()` method in `Main.py` computes the lane curvature in rads by averaging the the left and right line curvatures. The values are calculated in meter space with the suggested pixel to m conversion method adjusted to the pixel area dimensions I choose.
+The `Curvature.process()` method in `Main.py` computes the lane curvature in rads by averaging the left and right line curvatures. The values are calculated in meter space with the suggested pixel to m conversion method adjusted to the pixel area dimensions I choose.
 
 The `LaneOffset.process()` method in `Main.py` computes the car position in the lane by comparing the
 
@@ -124,4 +113,37 @@ Here's a [link to my video result](./processed.project_video.mp4)
 
 #### 1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
 
-Here I'll talk about the approach I took, what techniques I used, what worked and why, where the pipeline might fail and how I might improve it if I were going to pursue this project further.  
+I built the processing pipeline chaining all the methods discussed in the class and once the processing looked reasonable on the test images I chained together the processing pipeline for the project video. Even the first try gave good results for most of the video, but certain sections were problematic, especially the tree with the shadow before the end of the video.
+ 
+ With regards to the windowed vs margined lane finding on the first frame I used the window method, but after only the margin method.
+ 
+It seemed certain frames were too difficult for the processing I had, but only a few frames, so I added exponentially weighted averging of the fitted line points by adding the `ExponentialSmoothing` (```Main.py```) class in my pipeline after the line finding and before the curvature calculation. With this method the data from the new frames will be merged with the old data gradually, a single new bad frame will not overwrite the previous good fits.
+  
+This simple method already stabilized the lines quite a bit except for the last tree shadow. I overlayed the fit parameters on the video showing the 3 fitted curve parameters and the x coordinates where the base of the lane is found. I tried to find a method by looking at how these numbers compared between good and bad frames.
+  
+A good solution for the project video was to filter out those frames where the base of the line was found to be in unprobable location (I accept it between pixels 200 and 400 on the left and 900 and 1100 for the right side). This assumes of course that the car is driving in the lane, not leaving it.
+
+
+```python
+    def processor(img):
+        data.rawImg = img
+        data.undistImg = cal.process(data.rawImg)
+        data.binaryImg = thr.process(data.undistImg)
+        data.warpedImg = per.process(data.binaryImg)
+        if data.curverad is None:
+            lanes.process(data.warpedImg)
+        nextLanes.process(data.warpedImg)
+        smooth.process(data.warpedImg)
+        curve.process(data.warpedImg)
+        off.process(data.warpedImg)
+        return decorate.process(data.undistImg)
+```
+
+For the challange videos, this pipeline did not work well, for those I would try:
+
+* the road area that is warped should be retuned as up and down driving changes the correct area
+* the parameters for good curve fits are in a certain range, fits could be rejected based on these 
+* I would implement the fallback to window method from the margin lane finding if the fitted curve has unexpected parameters
+* I would try finetuning the binary thresholding given the challange videos visibility conditions
+ 
+For now I need to complete the final project in the term, but will return to will try these as well.
