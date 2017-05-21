@@ -24,7 +24,7 @@ The goals / steps of this project are the following:
 [image5]: ./output_images/lane.png "Fit Visual"
 [image5b]: ./output_images/lane2.png "Fit Visual"
 [image6]: ./output_images/final.png "Output"
-[video1]: ./project_video.mp4 "Video"
+[video1]: ./processed.project_video.mp4 "Video"
 
 ### Camera Calibration
 
